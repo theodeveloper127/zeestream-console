@@ -1,10 +1,10 @@
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  getDocs, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  getDocs,
   getDoc,
   query,
   orderBy,
@@ -14,8 +14,8 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '@/firebase/config';
-import { Movie, Episode, Comment, UserProfile, DashboardStats } from '@/types';
+import { db, storage } from '@/firebase/config'; // Assuming db and storage are initialized here
+import { Movie, Comment, UserProfile, DashboardStats } from '@/types'; // Removed Episode as it's not used
 
 // Movie operations
 export const getMovies = async (): Promise<Movie[]> => {
@@ -49,6 +49,8 @@ export const updateMovie = async (id: string, movieData: Partial<Movie>): Promis
   const updateData = { ...movieData };
   if (updateData.releaseDate) {
     updateData.releaseDate = Timestamp.fromDate(updateData.releaseDate) as any;
+  } else if (updateData.releaseDate === null) { // Handle explicit null for clearing date
+    updateData.releaseDate = null;
   }
   await updateDoc(movieRef, updateData);
 };
@@ -78,7 +80,7 @@ export const deleteUser = async (uid: string): Promise<void> => {
 export const deleteComment = async (movieId: string, commentId: string): Promise<void> => {
   const movieRef = doc(db, 'movies', movieId);
   const movieDoc = await getDoc(movieRef);
-  
+
   if (movieDoc.exists()) {
     const movieData = movieDoc.data() as Movie;
     const updatedComments = movieData.comments.filter(comment => comment.id !== commentId);
@@ -110,11 +112,28 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
     ...doc.data(),
     uploadDate: doc.data().uploadDate?.toDate() || new Date(),
     releaseDate: doc.data().releaseDate?.toDate() || null,
-    comments: doc.data().comments || [],
+    comments: doc.data().comments?.map((comment: any) => ({
+      ...comment,
+      timestamp: comment.timestamp?.toDate() || new Date(),
+    })) || [],
   })) as Movie[];
 
-  const totalSeries = movies.filter(movie => movie.isSeries).length;
-  const totalEpisodes = movies.reduce((acc, movie) => acc + (movie.parts?.length || 0), 0);
+  const totalMovies = movies.length;
+
+  // Calculate total episodes: count movies where isSeries is true
+  const seriesEpisodes = movies.filter(movie => movie.isSeries);
+  const totalEpisodes = seriesEpisodes.length;
+
+  // Calculate total series: count unique 'relationship' values among series episodes
+  const uniqueSeriesRelationships = new Set<string>();
+  seriesEpisodes.forEach(episode => {
+    if (episode.relationship) { 
+      uniqueSeriesRelationships.add(episode.relationship);
+    }
+  });
+  const totalSeries = uniqueSeriesRelationships.size;
+
+  // Calculate total comments: sum of comments array length from each movie
   const totalComments = movies.reduce((acc, movie) => acc + (movie.comments?.length || 0), 0);
 
   // Get recent movies (last 5)
@@ -123,7 +142,7 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
     .slice(0, 5);
 
   return {
-    totalMovies: movies.length,
+    totalMovies,
     totalSeries,
     totalEpisodes,
     totalUsers: usersSnapshot.size,

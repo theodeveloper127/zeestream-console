@@ -1,6 +1,6 @@
 export interface Movie {
   id: string;
-  name: string;
+  name: string; 
   slug: string;
   thumbnailUrl: string;
   type: 'original' | 'translated';
@@ -12,20 +12,12 @@ export interface Movie {
   description: string;
   trailerUrl: string;
   isSeries: boolean;
-  parts?: Episode[];
+  relationship: string; 
   comingSoon: boolean;
   releaseDate?: Date;
   translator?: string;
-}
-
-export interface Episode {
-  id: string;
-  title: string;
-  episodeNumber: number;
-  videoUrl: string;
-  thumbnailUrl: string;
-  duration: string;
-  description: string;
+  watchUrl: string;
+  downloadUrl?: string;
 }
 
 export interface Comment {
@@ -43,6 +35,7 @@ export interface UserProfile {
   photoURL?: string;
   createdAt: Date;
   likedMovies: string[];
+  role:string;
 }
 
 export interface DashboardStats {

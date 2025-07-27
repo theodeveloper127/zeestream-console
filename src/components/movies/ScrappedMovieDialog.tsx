@@ -1,17 +1,6 @@
 import { useState, useEffect } from 'react';
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  Timestamp,
-  serverTimestamp,
-} from 'firebase/firestore';
-// Import db from your existing Firebase config file
-import { db } from '@/firebase/config';
-
-// Importing interfaces from your central types file
-import { Movie, Comment } from '@/types';
+import axios from 'axios'; // Import axios for backend API calls
+import { Movie } from '@/types'; // Importing Movie interface
 
 import {
   Dialog,
@@ -36,14 +25,17 @@ import {
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
-interface MovieDialogProps {
+interface ScrappedMovieDialogProps {
   movie: Movie | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }
 
-// Helper function for slug generation (moved here for portability)
+// Define the backend API base URL for scrapped movies
+const API_SCRAPPED_MOVIES_BASE_URL = import.meta.env.VITE_API_SCRAPPED_MOVIES_URL;
+
+// Helper function for slug generation (can be shared or duplicated)
 const generateSlug = (name: string): string => {
   return name
     .toLowerCase()
@@ -66,7 +58,7 @@ const categories = [
   'Mystery',
 ];
 
-export const MovieDialog: React.FC<MovieDialogProps> = ({
+export const ScrappedMovieDialog: React.FC<ScrappedMovieDialogProps> = ({
   movie,
   open,
   onOpenChange,
@@ -75,7 +67,6 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
   const [loading, setLoading] = useState(false);
 
   // Initialize form data based on 'movie' prop or default values
-  // Reset form data when dialog opens or 'movie' prop changes
   const [formData, setFormData] = useState({
     name: movie?.name || '',
     thumbnailUrl: movie?.thumbnailUrl || '',
@@ -93,6 +84,7 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
     downloadUrl: movie?.downloadUrl || '',
   });
 
+  // Reset form data when dialog opens or 'movie' prop changes
   useEffect(() => {
     setFormData({
       name: movie?.name || '',
@@ -112,9 +104,6 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
     });
   }, [movie, open]);
 
-  // Removed the useEffect for auto-filling relationship based on movie name.
-  // The relationship field will now only be updated by direct user input.
-
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -124,6 +113,11 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
     setLoading(true);
 
     try {
+      if (!API_SCRAPPED_MOVIES_BASE_URL) {
+        throw new Error("VITE_API_SCRAPPED_MOVIES_URL is not defined in environment variables.");
+      }
+
+      // Prepare movie data for backend (MongoDB update)
       const movieData = {
         name: formData.name,
         slug: generateSlug(formData.name),
@@ -134,43 +128,49 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
         description: formData.description,
         trailerUrl: formData.trailerUrl,
         isSeries: formData.isSeries,
-        relationship: formData.relationship, // Relationship is always included now
+        relationship: formData.relationship,
         comingSoon: formData.comingSoon,
-        releaseDate: formData.releaseDate ? Timestamp.fromDate(new Date(formData.releaseDate)) : null,
+        // Convert date string back to ISO string or Date object if backend expects it
+        releaseDate: formData.releaseDate ? new Date(formData.releaseDate).toISOString() : null,
         translator: formData.type === 'translated' ? formData.translator : '',
         watchUrl: formData.watchUrl,
         downloadUrl: formData.downloadUrl || '',
+        // Likes and comments might be managed by the backend, send current values
         likes: movie?.likes || 0,
         comments: movie?.comments || [],
+        // Assuming backend handles uploadDate, if not, you might send it too
       };
 
       if (movie) {
-        // Update existing movie
-        const movieRef = doc(db, 'movies', movie.id);
-        await updateDoc(movieRef, movieData as any);
+        // Update existing scrapped movie via backend API (PUT request)
+        await axios.put(`${API_SCRAPPED_MOVIES_BASE_URL}/movies/${movie.id}`, movieData);
         toast({
           title: "Success",
-          description: "Movie updated successfully",
+          description: "Scrapped movie updated successfully in backend",
         });
       } else {
-        // Add new movie
-        const moviesRef = collection(db, 'movies');
-        await addDoc(moviesRef, {
-          ...movieData,
-          uploadDate: serverTimestamp(),
-        });
+        // This dialog is primarily for updating existing scrapped movies.
+        // If you need to add new scrapped movies via the backend, you'd implement axios.post here.
+        // For now, it's assumed new scrapped movies come from the scraping process.
         toast({
-          title: "Success",
-          description: "Movie added successfully",
+          title: "Info",
+          description: "This dialog is for editing existing scrapped movies. To add new ones, use the scraping process.",
+          variant: "default",
         });
+        setLoading(false);
+        return;
       }
 
-      onSuccess();
+      onSuccess(); // Trigger refresh of scrapped movies list in parent
     } catch (error) {
-      console.error('Error saving movie:', error);
+      console.error('Error saving scrapped movie:', error);
+      let errorMessage = "Failed to save scrapped movie to backend.";
+      if (axios.isAxiosError(error) && error.response) {
+        errorMessage = `Failed to save scrapped movie: ${error.response.status} - ${error.response.data.message || error.message}`;
+      }
       toast({
         title: "Error",
-        description: "Failed to save movie",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -183,10 +183,10 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {movie ? 'Edit Movie' : 'Add New Movie'}
+            {movie ? 'Edit Scrapped Movie' : 'Add New Scrapped Movie (via backend)'}
           </DialogTitle>
           <DialogDescription>
-            {movie ? 'Update movie information' : 'Fill in the details to add a new movie'}
+            {movie ? 'Update scrapped movie information in the backend' : 'This dialog is for editing existing scrapped movies.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -199,7 +199,7 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 placeholder="Enter movie name"
-                required // Made required
+                required
               />
             </div>
 
@@ -305,7 +305,6 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
             )}
           </div>
 
-          {/* Relationship field is now always visible and required, moved to thumbnail section */}
           <div className="space-y-2">
             <Label htmlFor="relationship">Relationship Key *</Label>
             <Input
@@ -313,7 +312,7 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
               value={formData.relationship}
               onChange={(e) => handleInputChange('relationship', e.target.value)}
               placeholder="e.g., john-wick-saga or standalone-movie"
-              required // Made required
+              required
             />
           </div>
 
@@ -380,10 +379,10 @@ export const MovieDialog: React.FC<MovieDialogProps> = ({
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  {movie ? 'Updating...' : 'Adding...'}
+                  Updating...
                 </>
               ) : (
-                movie ? 'Update Movie' : 'Add Movie'
+                'Update Scrapped Movie'
               )}
             </Button>
           </DialogFooter>

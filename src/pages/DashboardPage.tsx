@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios'; // Import axios
 import { getDashboardStats } from '@/utils/firebase';
 import { DashboardStats } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Film, Play, Users, MessageSquare, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Loader2, Film, Play, Users, MessageSquare, TrendingUp, ArrowRight, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+
+type CommandStatus = {
+  status: 'idle' | 'scrapping' | 'done' | 'error'; // 'analyzing' state removed as per request
+  message?: string;
+};
+const API_BASE_URL = import.meta.env.VITE_API_SCRAP_URL;
 
 export const DashboardPage = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  // commandLoading now stores a map of button IDs to their current status
+  const [commandLoading, setCommandLoading] = useState<Record<string, CommandStatus>>({});
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -29,6 +39,42 @@ export const DashboardPage = () => {
     fetchStats();
   }, []);
 
+  const sendScrapCommand = async (source: string) => {
+    // Set initial status to 'scrapping' for the specific button
+    setCommandLoading(prev => ({ ...prev, [source]: { status: 'scrapping' } }));
+
+    try {
+
+      const apiUrl = `${API_BASE_URL}/scrapping/web/${source}`;
+
+      // Use axios to make the GET request to the dynamic URL
+      const response = await axios.get(apiUrl);
+
+      // Set status to 'done' immediately after successful API call
+      const message = response.data.message || 'Scrapping and analysis data initiated.';
+      setCommandLoading(prev => ({ ...prev, [source]: { status: 'done', message: message } }));
+      toast({
+        title: "Success",
+        description: `${message} Done!`, // Updated success message
+      });
+
+    } catch (error) {
+      console.error(`Error sending scrap command for ${source}:`, error);
+      let errorMessage = `Failed to scrap from ${source}. Please try again.`;
+      // Check if it's an Axios error with a response to get more specific message
+      if (axios.isAxiosError(error) && error.response) {
+        errorMessage = `Failed to scrap from ${source}: ${error.response.data.message || error.message}. Please try again.`;
+      }
+      // Set status to 'error' immediately after API call failure
+      setCommandLoading(prev => ({ ...prev, [source]: { status: 'error', message: errorMessage } }));
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -37,6 +83,7 @@ export const DashboardPage = () => {
     );
   }
 
+  // Configuration for dashboard statistics cards
   const statCards = [
     {
       title: 'Total Movies',
@@ -75,6 +122,45 @@ export const DashboardPage = () => {
     },
   ];
 
+  // Configuration for dynamic scrap command buttons
+  const scrapButtons = [
+    {
+      id: 'mihetoFilms',
+      title: 'Scrap MihetofIlms',
+      icon: Film,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-50',
+    },
+    {
+      id: 'oshakurFilms',
+      title: 'Scrap OshakurFilms',
+      icon: Film,
+      color: 'text-emerald-600',
+      bgColor: 'bg-emerald-50',
+    },
+    {
+      id: 'anotherSource1',
+      title: 'Scrap Another Source 1',
+      icon: Film,
+      color: 'text-rose-600',
+      bgColor: 'bg-rose-50',
+    },
+    {
+      id: 'anotherSource2',
+      title: 'Scrap Another Source 2',
+      icon: Film,
+      color: 'text-cyan-600',
+      bgColor: 'bg-cyan-50',
+    },
+    {
+      id: 'anotherSource3',
+      title: 'Scrap Another Source 3',
+      icon: Film,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -86,7 +172,7 @@ export const DashboardPage = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {statCards.map((stat) => (
           <Card key={stat.title} className="shadow-card hover:shadow-lg transition-shadow">
@@ -107,7 +193,65 @@ export const DashboardPage = () => {
         ))}
       </div>
 
-      {/* Recent Movies */}
+      {/* Scrap Commands Section */}
+      <h2 className="text-2xl font-bold text-foreground mt-8">Scrap Commands</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        {scrapButtons.map((button) => {
+          // Get the current status for this specific button
+          const currentCommandStatus = commandLoading[button.id];
+          // Button is disabled only when it's actively 'scrapping'
+          const isDisabled = currentCommandStatus?.status === 'scrapping';
+
+          return (
+            <Card
+              key={button.id}
+              className="shadow-card hover:shadow-lg transition-shadow cursor-pointer"
+              // Card's onClick is removed to ensure only the Button handles the action
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {button.title}
+                </CardTitle>
+                <div className={`p-2 rounded-lg ${button.bgColor}`}>
+                  <button.icon className={`h-4 w-4 ${button.color}`} />
+                </div>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-between items-center"
+                  onClick={() => sendScrapCommand(button.id)} // Button handles the click
+                  disabled={isDisabled} // Disable button based on its specific status
+                >
+                  {currentCommandStatus?.status === 'scrapping' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Scrapping...
+                    </>
+                  ) : currentCommandStatus?.status === 'done' ? (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                      Done!
+                    </>
+                  ) : currentCommandStatus?.status === 'error' ? (
+                    <>
+                      <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                      Error!
+                    </>
+                  ) : (
+                    <>
+                      Scrap the web
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Recent Movies Section */}
       <Card className="shadow-card">
         <CardHeader>
           <CardTitle className="text-xl font-semibold text-foreground">
